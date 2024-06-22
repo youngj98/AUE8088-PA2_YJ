@@ -272,9 +272,15 @@ class Loggers:
             if best_fitness == fi:
                 best_results = [epoch] + vals[3:7]
                 for i, name in enumerate(self.best_keys):
-                    self.wandb.wandb_run.summary[name] = best_results[i]  # log best results in the summary
-            self.wandb.log(x)
-            self.wandb.end_epoch()
+                    try:
+                        self.wandb.wandb_run.summary[name] = best_results[i]  # log best results in the summary
+                    except wandb.errors.UsageError as e:
+                        LOGGER.warning(f"WandB usage error: {e}")
+            try:
+                self.wandb.log(x)
+                self.wandb.end_epoch()
+            except wandb.errors.UsageError as e:
+                LOGGER.warning(f"WandB usage error: {e}")
 
         if self.clearml:
             self.clearml.current_epoch_logged_images = set()  # reset epoch image limit
@@ -285,12 +291,15 @@ class Loggers:
 
     def on_model_save(self, last, epoch, final_epoch, best_fitness, fi):
         """Callback that handles model saving events, logging to Weights & Biases or ClearML if enabled."""
+        fold_name = Path(self.opt.save_dir).name
+        model_name = f"{fold_name}_epoch_{epoch:03d}"
+        
         if (epoch + 1) % self.opt.save_period == 0 and not final_epoch and self.opt.save_period != -1:
             if self.wandb:
                 self.wandb.log_model(last.parent, self.opt, epoch, fi, best_model=best_fitness == fi)
             if self.clearml:
                 self.clearml.task.update_output_model(
-                    model_path=str(last), model_name="Latest Model", auto_delete_file=False
+                    model_path=str(last), model_name=model_name, auto_delete_file=False
                 )
 
         if self.comet_logger:
