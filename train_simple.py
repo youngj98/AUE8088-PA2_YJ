@@ -484,27 +484,28 @@ def main(opt, callbacks=Callbacks()):
     if opt.name == "cfg":
         opt.name = Path(opt.cfg).stem  # use model.yaml as name
 
-    opt.use_wandb = True
-
     for fold in range(opt.folds):
         opt.save_dir = str(increment_path(Path(opt.project) /f"{opt.name}_fold_{fold:02d}", exist_ok=opt.exist_ok))
         opt.data = f"data/kaist-rgbt_fold_{fold:02d}.yaml"
         opt.fold = fold
-        if opt.use_wandb:
-            wabdb_run = wandb.init(
-                config=opt,
-                resume="allow",
-                project="YOLOv5_Project" if opt.project == "runs/train" else Path(opt.project).stem,
-                entity=opt.entity,
-                name=f"{opt.name}_fold_{fold:02d}",
-                job_type="Training"
-            )
+
+        wandb_run = wandb.init(
+            config=opt,
+            resume="allow",
+            project="YOLOv5_Project" if opt.project == "runs/train" else Path(opt.project).stem,
+            entity=opt.entity,
+            name=f"{opt.name}_fold_{fold:02d}",
+            job_type="Training"
+        )
         # Train
         device = select_device(opt.device, batch_size=opt.batch_size)
         train(opt.hyp, opt, device, callbacks)
 
-        if opt.use_wandb:
-            wandb.finish()
+        # artifact = wandb.Artifact(f"model_fold_{fold:02d}", type="model")
+        # artifact.add_dir(opt.save_dir)
+        # wandb_run.log_artifact(artifact)
+
+        wandb_run.finish()
 
 
 if __name__ == "__main__":

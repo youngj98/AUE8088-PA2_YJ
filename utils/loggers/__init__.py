@@ -14,6 +14,8 @@ from utils.loggers.clearml.clearml_utils import ClearmlLogger
 from utils.loggers.wandb.wandb_utils import WandbLogger
 from utils.plots import plot_images, plot_labels, plot_results
 from utils.torch_utils import de_parallel
+from PIL import Image
+import numpy as np
 
 LOGGERS = ("csv", "tb", "wandb", "clearml", "comet")  # *.csv, TensorBoard, Weights & Biases, ClearML
 RANK = int(os.getenv("RANK", -1))
@@ -315,19 +317,22 @@ class Loggers:
 
         if self.tb and not self.clearml:  # These images are already captured by ClearML by now, we don't want doubles
             for f in files:
-                self.tb.add_image(f.stem, cv2.imread(str(f))[..., ::-1], epoch, dataformats="HWC")
+                img_pil = Image.open(str(f)).convert("RGB")
+                img_pil = img_pil.resize((img_pil.width, img_pil.height), Image.LANCZOS)
+                self.tb.add_image(f.stem, np.array(img_pil)[..., ::-1], epoch, dataformats="HWC")
 
         if self.wandb:
             self.wandb.log(dict(zip(self.keys[3:10], results)))
             self.wandb.log({"Results": [wandb.Image(str(f), caption=f.name) for f in files]})
             # Calling wandb.log. TODO: Refactor this into WandbLogger.log_model
             if not self.opt.evolve:
-                wandb.log_artifact(
-                    str(best if best.exists() else last),
-                    type="model",
-                    name=f"run_{self.wandb.wandb_run.id}_model",
-                    aliases=["latest", "best", "stripped"],
-                )
+                if self.wandb and self.wandb.wandb_run is not None:
+                    wandb.log_artifact(
+                        str(best if best.exists() else last),
+                        type="model",
+                        name=f"run_{self.wandb.wandb_run.id}_model",
+                        aliases=["latest", "best", "stripped"],
+                    )
             self.wandb.finish_run()
 
         if self.clearml and not self.opt.evolve:

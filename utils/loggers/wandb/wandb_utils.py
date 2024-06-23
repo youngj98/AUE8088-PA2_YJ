@@ -127,11 +127,11 @@ class WandbLogger:
         fitness_score (float) -- fitness score for current epoch
         best_model (boolean) -- Boolean representing if the current checkpoint is the best yet.
         """
-        fold_name = Path(opt.save_dir).name
-        model_name = f"{fold_name}_epoch_{epoch:03d}"
+        # fold_name = Path(opt.save_dir).name
+        # model_name = f"{fold_name}_epoch_{epoch:03d}"
 
         model_artifact = wandb.Artifact(
-            f"run_{wandb.run.id}_model_{model_name}",
+            f"run_{wandb.run.id}_model",
             type="model",
             metadata={
                 "original_url": str(path),
@@ -148,7 +148,7 @@ class WandbLogger:
             aliases=[
                 "latest",
                 "last",
-                model_name,
+                f"epoch {str(self.current_epoch)}",
                 "best" if best_model else "",
             ],
         )
