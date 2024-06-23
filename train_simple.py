@@ -485,27 +485,30 @@ def main(opt, callbacks=Callbacks()):
         opt.name = Path(opt.cfg).stem  # use model.yaml as name
 
     for fold in range(opt.folds):
+        callbacks = Callbacks()
         opt.save_dir = str(increment_path(Path(opt.project) /f"{opt.name}_fold_{fold:02d}", exist_ok=opt.exist_ok))
         opt.data = f"data/kaist-rgbt_fold_{fold:02d}.yaml"
         opt.fold = fold
 
-        wandb_run = wandb.init(
-            config=opt,
-            resume="allow",
-            project="YOLOv5_Project" if opt.project == "runs/train" else Path(opt.project).stem,
-            entity=opt.entity,
-            name=f"{opt.name}_fold_{fold:02d}",
-            job_type="Training"
-        )
+        # if wandb and not wandb.run:
+        #     wandb_run = wandb.init(
+        #         config=opt,
+        #         resume="allow",
+        #         project="YOLOv5_Project" if opt.project == "runs/train" else Path(opt.project).stem,
+        #         entity=opt.entity,
+        #         name=f"{opt.name}_fold_{fold:02d}",
+        #         job_type="Training"
+        #     )
         # Train
         device = select_device(opt.device, batch_size=opt.batch_size)
         train(opt.hyp, opt, device, callbacks)
 
-        # artifact = wandb.Artifact(f"model_fold_{fold:02d}", type="model")
-        # artifact.add_dir(opt.save_dir)
-        # wandb_run.log_artifact(artifact)
+        # if wandb_run and wandb_run.job_type == 'Training':
+        #     # artifact = wandb.Artifact(f"model_fold_{fold:02d}", type="model")
+        #     # artifact.add_dir(opt.save_dir)
+        #     # wandb_run.log_artifact(artifact)
 
-        wandb_run.finish()
+        #     wandb_run.finish()
 
 
 if __name__ == "__main__":

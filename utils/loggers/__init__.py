@@ -14,8 +14,6 @@ from utils.loggers.clearml.clearml_utils import ClearmlLogger
 from utils.loggers.wandb.wandb_utils import WandbLogger
 from utils.plots import plot_images, plot_labels, plot_results
 from utils.torch_utils import de_parallel
-from PIL import Image
-import numpy as np
 
 LOGGERS = ("csv", "tb", "wandb", "clearml", "comet")  # *.csv, TensorBoard, Weights & Biases, ClearML
 RANK = int(os.getenv("RANK", -1))
@@ -274,15 +272,9 @@ class Loggers:
             if best_fitness == fi:
                 best_results = [epoch] + vals[3:7]
                 for i, name in enumerate(self.best_keys):
-                    try:
-                        self.wandb.wandb_run.summary[name] = best_results[i]  # log best results in the summary
-                    except wandb.errors.UsageError as e:
-                        LOGGER.warning(f"WandB usage error: {e}")
-            try:
-                self.wandb.log(x)
-                self.wandb.end_epoch()
-            except wandb.errors.UsageError as e:
-                LOGGER.warning(f"WandB usage error: {e}")
+                    self.wandb.wandb_run.summary[name] = best_results[i]  # log best results in the summary
+            self.wandb.log(x)
+            self.wandb.end_epoch()
 
         if self.clearml:
             self.clearml.current_epoch_logged_images = set()  # reset epoch image limit
@@ -293,15 +285,12 @@ class Loggers:
 
     def on_model_save(self, last, epoch, final_epoch, best_fitness, fi):
         """Callback that handles model saving events, logging to Weights & Biases or ClearML if enabled."""
-        fold_name = Path(self.opt.save_dir).name
-        model_name = f"{fold_name}_epoch_{epoch:03d}"
-        
         if (epoch + 1) % self.opt.save_period == 0 and not final_epoch and self.opt.save_period != -1:
             if self.wandb:
                 self.wandb.log_model(last.parent, self.opt, epoch, fi, best_model=best_fitness == fi)
             if self.clearml:
                 self.clearml.task.update_output_model(
-                    model_path=str(last), model_name=model_name, auto_delete_file=False
+                    model_path=str(last), model_name="Latest Model", auto_delete_file=False
                 )
 
         if self.comet_logger:
@@ -317,22 +306,19 @@ class Loggers:
 
         if self.tb and not self.clearml:  # These images are already captured by ClearML by now, we don't want doubles
             for f in files:
-                img_pil = Image.open(str(f)).convert("RGB")
-                img_pil = img_pil.resize((img_pil.width, img_pil.height), Image.LANCZOS)
-                self.tb.add_image(f.stem, np.array(img_pil)[..., ::-1], epoch, dataformats="HWC")
+                self.tb.add_image(f.stem, cv2.imread(str(f))[..., ::-1], epoch, dataformats="HWC")
 
         if self.wandb:
             self.wandb.log(dict(zip(self.keys[3:10], results)))
             self.wandb.log({"Results": [wandb.Image(str(f), caption=f.name) for f in files]})
             # Calling wandb.log. TODO: Refactor this into WandbLogger.log_model
             if not self.opt.evolve:
-                if self.wandb and self.wandb.wandb_run is not None:
-                    wandb.log_artifact(
-                        str(best if best.exists() else last),
-                        type="model",
-                        name=f"run_{self.wandb.wandb_run.id}_model",
-                        aliases=["latest", "best", "stripped"],
-                    )
+                wandb.log_artifact(
+                    str(best if best.exists() else last),
+                    type="model",
+                    name=f"run_{self.wandb.wandb_run.id}_model",
+                    aliases=["latest", "best", "stripped"],
+                )
             self.wandb.finish_run()
 
         if self.clearml and not self.opt.evolve:

@@ -68,7 +68,7 @@ class WandbLogger:
             self.wandb_run = wandb.run or wandb.init(
                 config=opt,
                 resume="allow",
-                project="YOLOv5_Project" if opt.project == "runs/train" else Path(opt.project).stem,
+                project="YOLOv5" if opt.project == "runs/train" else Path(opt.project).stem,
                 entity=opt.entity,
                 name=opt.name if opt.name != "exp" else None,
                 job_type=job_type,
@@ -127,9 +127,6 @@ class WandbLogger:
         fitness_score (float) -- fitness score for current epoch
         best_model (boolean) -- Boolean representing if the current checkpoint is the best yet.
         """
-        # fold_name = Path(opt.save_dir).name
-        # model_name = f"{fold_name}_epoch_{epoch:03d}"
-
         model_artifact = wandb.Artifact(
             f"run_{wandb.run.id}_model",
             type="model",
@@ -191,16 +188,11 @@ class WandbLogger:
     def finish_run(self):
         """Log metrics if any and finish the current W&B run."""
         if self.wandb_run:
-            try:
-                if self.log_dict:
-                    with all_logging_disabled():
-                        wandb.log(self.log_dict)
-            except wandb.errors.UsageError as e:
-                LOGGER.warning(f"WandB usage error: {e}")
-            finally:
-                if wandb.run is not None:
-                    wandb.run.finish()
-                LOGGER.warning(DEPRECATION_WARNING)
+            if self.log_dict:
+                with all_logging_disabled():
+                    wandb.log(self.log_dict)
+            wandb.run.finish()
+            LOGGER.warning(DEPRECATION_WARNING)
 
 
 @contextmanager
