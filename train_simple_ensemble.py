@@ -417,29 +417,22 @@ def train(hyp, opt, device, callbacks):
     torch.cuda.empty_cache()
     return results
 
-def test(hyp, opt, device, callbacks):
+def test(hyp, opt, device, callbacks, ensemble_model):
     """
     Tests YOLOv5 model with given hyperparameters, options, and device, using the best trained model.
 
     `hyp` argument is path/to/hyp.yaml or hyp dictionary.
     """
     save_dir = Path(opt.save_dir)
-    best_model_path = save_dir / "weights" / "best.pt"
     test_path = "/home/ailab/git/AUE8088-PROJECT_YJ/AUE8088-PA2_YJ/datasets/kaist-rgbt/test-all-20.txt"
     is_coco = isinstance(test_path, str) and test_path.endswith("coco/val2017.txt")  # COCO dataset
-
-    # Load the best model
-    best_model = torch.load(best_model_path, map_location=device)
-    model = Model(cfg=best_model['model'].yaml, ch=3, nc=best_model['model'].nc).to(device)
-    model.load_state_dict(best_model['model'].state_dict())
-    model.eval()  # set model to evaluation mode
 
     # Prepare a dataloader for the test data
     test_loader = create_dataloader(
         test_path,
         opt.imgsz,
         opt.batch_size * 2,
-        max(int(model.stride.max()), 32),  # grid size (max stride)
+        32,
         opt.single_cls,
         hyp=hyp,
         augment=False,
@@ -454,12 +447,15 @@ def test(hyp, opt, device, callbacks):
 
     data_dict = check_dataset(opt.data)
 
-    LOGGER.info(f"\nTesting {best_model_path}...")
+    LOGGER.info(f"\nTesting ensemble models...")
+
+    ensemble_model.to(device)
+
     results, _, _ = validate.run(
         data=data_dict,
         batch_size=opt.batch_size * 2,
         imgsz=opt.imgsz,
-        model=model,
+        model=ensemble_model,
         iou_thres=0.65 if (is_coco and 'coco' in opt.data) else 0.60,  # best pycocotools at iou 0.65
         single_cls=opt.single_cls,
         dataloader=test_loader,
@@ -473,6 +469,21 @@ def test(hyp, opt, device, callbacks):
     )
 
     return results
+
+class EnsembleModel(nn.Module):
+    def __init__(self, models):
+        super(EnsembleModel, self).__init__()
+        self.models = nn.ModuleList(models)
+        self.names = models[0].names
+
+    def forward(self, x, augment=False):
+        if isinstance(x, list):
+            x = [xi.to(next(self.parameters()).device) for xi in x]
+        else:
+            x = x.to(next(self.parameters()).device)
+        preds = [model(x, augment=augment)[0] for model in self.models]
+        avg_preds = torch.mean(torch.stack(preds), dim=0)
+        return avg_preds
 
 
 def parse_opt(known=False):
@@ -552,9 +563,7 @@ def main(opt, callbacks=Callbacks()):
     if opt.name == "cfg":
         opt.name = Path(opt.cfg).stem  # use model.yaml as name
 
-    fold_results = []
-    best_fitness = -float('inf')
-    best_model_path = None
+    ensemble_models = []
 
     for fold in range(opt.folds):
         callbacks = Callbacks()
@@ -564,29 +573,23 @@ def main(opt, callbacks=Callbacks()):
 
         # Train
         device = select_device(opt.device, batch_size=opt.batch_size)
-        results = train(opt.hyp, opt, device, callbacks)
-        fold_results.append(results)
-
-        fi = fitness(np.array(results).reshape(1, -1))
-        if fi > best_fitness:
-            best_fitness = fi
-            best_model_path = Path(opt.save_dir) / "weights" / "best.pt"
+        train(opt.hyp, opt, device, callbacks)
+        
+        best_model_path = Path(opt.save_dir) / "weights" / "best.pt" 
+        best_model = torch.load(best_model_path, map_location=device)
+        model = Model(cfg=best_model['model'].yaml, ch=3, nc=best_model['model'].nc).to(device)
+        model.load_state_dict(best_model['model'].state_dict())
+        model.eval()
+        ensemble_models.append(model)
     
-    fold_results = np.array(fold_results)
-    avg_results = np.mean(fold_results, axis=0)
-    LOGGER.info(f"\nAverage results over {opt.folds} folds: {avg_results}")
+    LOGGER.info(f"\nEnsemble of {len(ensemble_models)} models created.")
 
     if best_model_path:
-        test_results = test(opt.hyp, opt, device, callbacks)
+        device = select_device(opt.device)
+        ensemble_model = EnsembleModel(ensemble_models).to(device)
+        test_results = test(opt.hyp, opt, device, callbacks, ensemble_model)
         LOGGER.info(f"\nTest results: {test_results}")
     
-    # device = select_device(opt.device, batch_size=opt.batch_size)
-    # best_model = torch.load(best_model_path, map_location=device)
-    # model = Model(cfg=best_model['model'].yaml, ch=3, nc=best_model['model'].nc).to(device)
-    # model.load_state_dict(best_model['model'].state_dict())
-    # model.eval()
-
-    # LOGGER.info(f"\nBest model path: {best_model_path}, Best fitness score: {best_fitness}")
 
 if __name__ == "__main__":
     wandb.login(key="87c974a015598c3d0c2eb780c5d1be4608a3814d", relogin=True)

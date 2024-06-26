@@ -50,7 +50,7 @@ def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir=".", names
     unique_classes, nt = np.unique(target_cls, return_counts=True)
 
     # remove ignore class
-    unique_classes = unique_classes[unique_classes != -1]
+    # unique_classes = unique_classes[unique_classes != -1]
     nc = unique_classes.shape[0]  # number of classes, number of detections
 
     # Create Precision-Recall curve and compute AP for each class
